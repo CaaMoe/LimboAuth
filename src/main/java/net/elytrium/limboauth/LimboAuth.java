@@ -21,7 +21,6 @@ import com.google.common.primitives.Bytes;
 import com.google.common.primitives.Longs;
 import com.google.gson.JsonElement;
 import com.google.gson.JsonObject;
-import com.google.gson.JsonParser;
 import com.google.inject.Inject;
 import com.j256.ormlite.dao.Dao;
 import com.j256.ormlite.dao.DaoManager;
@@ -55,12 +54,8 @@ import io.whitfin.siphash.SipHasher;
 import java.io.File;
 import java.io.IOException;
 import java.net.InetAddress;
-import java.net.URI;
 import java.net.URISyntaxException;
-import java.net.URLEncoder;
 import java.net.http.HttpClient;
-import java.net.http.HttpRequest;
-import java.net.http.HttpResponse;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
@@ -77,14 +72,12 @@ import java.util.UUID;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.TimeUnit;
 import java.util.function.Consumer;
-import java.util.function.Function;
 import java.util.regex.Pattern;
 import java.util.stream.Collectors;
 import java.util.stream.Stream;
 import net.elytrium.commons.kyori.serialization.Serializer;
 import net.elytrium.commons.kyori.serialization.Serializers;
 import net.elytrium.commons.utils.reflection.ReflectionException;
-import net.elytrium.commons.utils.updates.UpdatesChecker;
 import net.elytrium.limboapi.api.Limbo;
 import net.elytrium.limboapi.api.LimboFactory;
 import net.elytrium.limboapi.api.chunk.VirtualWorld;
@@ -97,7 +90,6 @@ import net.elytrium.limboauth.command.ForceLoginCommand;
 import net.elytrium.limboauth.command.ForceRegisterCommand;
 import net.elytrium.limboauth.command.ForceUnregisterCommand;
 import net.elytrium.limboauth.command.LimboAuthCommand;
-import net.elytrium.limboauth.command.PremiumCommand;
 import net.elytrium.limboauth.command.TotpCommand;
 import net.elytrium.limboauth.command.UnregisterCommand;
 import net.elytrium.limboauth.dependencies.DatabaseLibrary;
@@ -115,8 +107,6 @@ import net.elytrium.limboauth.model.SQLRuntimeException;
 import net.kyori.adventure.text.Component;
 import net.kyori.adventure.text.serializer.ComponentSerializer;
 import net.kyori.adventure.title.Title;
-import org.bstats.charts.SimplePie;
-import org.bstats.charts.SingleLineChart;
 import org.bstats.velocity.Metrics;
 import org.checkerframework.checker.nullness.qual.MonotonicNonNull;
 import org.checkerframework.checker.nullness.qual.Nullable;
@@ -219,36 +209,11 @@ public class LimboAuth {
       LOGGER.error("SQL EXCEPTION CAUGHT.", exception);
       this.server.shutdown();
     }
-
-    Metrics metrics = this.metricsFactory.make(this, 13700);
-    metrics.addCustomChart(new SimplePie("floodgate_auth", () -> String.valueOf(Settings.IMP.MAIN.FLOODGATE_NEED_AUTH)));
-    metrics.addCustomChart(new SimplePie("premium_auth", () -> String.valueOf(Settings.IMP.MAIN.ONLINE_MODE_NEED_AUTH)));
-    metrics.addCustomChart(new SimplePie("db_type", () -> String.valueOf(Settings.IMP.DATABASE.STORAGE_TYPE)));
-    metrics.addCustomChart(new SimplePie("load_world", () -> String.valueOf(Settings.IMP.MAIN.LOAD_WORLD)));
-    metrics.addCustomChart(new SimplePie("totp_enabled", () -> String.valueOf(Settings.IMP.MAIN.ENABLE_TOTP)));
-    metrics.addCustomChart(new SimplePie("dimension", () -> String.valueOf(Settings.IMP.MAIN.DIMENSION)));
-    metrics.addCustomChart(new SimplePie("save_uuid", () -> String.valueOf(Settings.IMP.MAIN.SAVE_UUID)));
-    metrics.addCustomChart(new SingleLineChart("registered_players", () -> Math.toIntExact(this.playerDao.countOf())));
-
-    this.server.getScheduler().buildTask(this, () -> {
-      if (!UpdatesChecker.checkVersionByURL("https://raw.githubusercontent.com/Elytrium/LimboAuth/master/VERSION", Settings.IMP.VERSION)) {
-        LOGGER.error("****************************************");
-        LOGGER.warn("The new LimboAuth update was found, please update.");
-        LOGGER.error("https://github.com/Elytrium/LimboAuth/releases/");
-        LOGGER.error("****************************************");
-      }
-    }).schedule();
   }
 
   @SuppressFBWarnings(value = "NP_NULL_ON_SOME_PATH", justification = "LEGACY_AMPERSAND can't be null in velocity.")
   public void reload() {
     Settings.IMP.reload(this.configFile, Settings.IMP.PREFIX);
-
-    if (!Settings.IMP.MAIN.ONLINE_MODE_NEED_AUTH_STRICT && !Settings.IMP.MAIN.SAVE_PREMIUM_ACCOUNTS) {
-      Settings.IMP.MAIN.SAVE_PREMIUM_ACCOUNTS = true;
-      LOGGER.error("As you have online-mode-need-auth-strict disabled, save-premium-accounts "
-          + "was forcibly enabled to prevent online-mode accounts hijacking.");
-    }
 
     if (this.floodgateApi == null && !Settings.IMP.MAIN.FLOODGATE_NEED_AUTH) {
       throw new IllegalStateException("If you want floodgate players to automatically pass auth (floodgate-need-auth: false),"
@@ -363,7 +328,6 @@ public class LimboAuth {
     manager.register("unregister", new UnregisterCommand(this, this.playerDao), "unreg");
     manager.register("forceregister", new ForceRegisterCommand(this, this.playerDao), "forcereg");
     manager.register("forcelogin", new ForceLoginCommand(this));
-    manager.register("premium", new PremiumCommand(this, this.playerDao), "license");
     manager.register("forceunregister", new ForceUnregisterCommand(this, this.server, this.playerDao), "forceunreg");
     manager.register("changepassword", new ChangePasswordCommand(this, this.playerDao), "changepass", "cp");
     manager.register("forcechangepassword", new ForceChangePasswordCommand(this, this.server, this.playerDao), "forcechangepass", "fcp");
@@ -594,16 +558,6 @@ public class LimboAuth {
           }
         }
 
-        if (nicknameRegisteredPlayer == null && registeredPlayer == null && Settings.IMP.MAIN.SAVE_PREMIUM_ACCOUNTS) {
-          registeredPlayer = new RegisteredPlayer(player).setPremiumUuid(player.getUniqueId());
-
-          try {
-            this.playerDao.create(registeredPlayer);
-          } catch (SQLException e) {
-            throw new SQLRuntimeException(e);
-          }
-        }
-
         if (registeredPlayer == null || registeredPlayer.getHash().isEmpty()) {
           // Due to the current connection state, which is set to LOGIN there, we cannot send the packets.
           // We need to wait for the PLAY connection state to set.
@@ -718,40 +672,6 @@ public class LimboAuth {
     return true;
   }
 
-  public PremiumResponse isPremiumExternal(String nickname) {
-    try {
-      HttpResponse<String> response = this.client.send(
-          HttpRequest.newBuilder()
-              .uri(URI.create(String.format(Settings.IMP.MAIN.ISPREMIUM_AUTH_URL, URLEncoder.encode(nickname, StandardCharsets.UTF_8))))
-              .build(),
-          HttpResponse.BodyHandlers.ofString()
-      );
-
-      int statusCode = response.statusCode();
-
-      if (Settings.IMP.MAIN.STATUS_CODE_RATE_LIMIT.contains(statusCode)) {
-        return new PremiumResponse(PremiumState.RATE_LIMIT);
-      }
-
-      JsonElement jsonElement = JsonParser.parseString(response.body());
-
-      if (Settings.IMP.MAIN.STATUS_CODE_USER_EXISTS.contains(statusCode)
-          && this.validateScheme(jsonElement, Settings.IMP.MAIN.USER_EXISTS_JSON_VALIDATOR_FIELDS)) {
-        return new PremiumResponse(PremiumState.PREMIUM_USERNAME, ((JsonObject) jsonElement).get(Settings.IMP.MAIN.JSON_UUID_FIELD).getAsString());
-      }
-
-      if (Settings.IMP.MAIN.STATUS_CODE_USER_NOT_EXISTS.contains(statusCode)
-          && this.validateScheme(jsonElement, Settings.IMP.MAIN.USER_NOT_EXISTS_JSON_VALIDATOR_FIELDS)) {
-        return new PremiumResponse(PremiumState.CRACKED);
-      }
-
-      return new PremiumResponse(PremiumState.ERROR);
-    } catch (IOException | InterruptedException e) {
-      LOGGER.error("Unable to authenticate with Mojang.", e);
-      return new PremiumResponse(PremiumState.ERROR);
-    }
-  }
-
   public PremiumResponse isPremiumInternal(String nickname) {
     try {
       QueryBuilder<RegisteredPlayer, String> crackedCountQuery = this.playerDao.queryBuilder();
@@ -783,103 +703,20 @@ public class LimboAuth {
     }
   }
 
-  public boolean isPremiumUuid(UUID uuid) {
-    try {
-      QueryBuilder<RegisteredPlayer, String> premiumCountQuery = this.playerDao.queryBuilder();
-      premiumCountQuery.where()
-          .eq(RegisteredPlayer.PREMIUM_UUID_FIELD, uuid.toString())
-          .and()
-          .eq(RegisteredPlayer.HASH_FIELD, "");
-      premiumCountQuery.setCountOf(true);
-
-      return this.playerDao.countOf(premiumCountQuery.prepare()) != 0;
-    } catch (SQLException e) {
-      LOGGER.error("Unable to check if account is premium.", e);
-      return false;
-    }
-  }
-
-  @SafeVarargs
-  private boolean checkIsPremiumAndCache(String nickname, Function<String, PremiumResponse>... functions) {
-    String lowercaseNickname = nickname.toLowerCase(Locale.ROOT);
-    if (this.premiumCache.containsKey(lowercaseNickname)) {
-      return this.premiumCache.get(lowercaseNickname).isPremium();
-    }
-
-    boolean premium = false;
-    boolean unknown = false;
-    boolean wasRateLimited = false;
-    boolean wasError = false;
-    UUID uuid = null;
-
-    for (Function<String, PremiumResponse> function : functions) {
-      PremiumResponse check = function.apply(lowercaseNickname);
-      if (check.getUuid() != null) {
-        uuid = check.getUuid();
-      }
-
-      switch (check.getState()) {
-        case CRACKED: {
-          return this.setPremium(lowercaseNickname, false).isPremium();
-        }
-        case PREMIUM: {
-          CachedPremiumUser premiumUser = this.setPremium(lowercaseNickname, true);
-          premiumUser.setForcePremium(true);
-          return premiumUser.isPremium();
-        }
-        case PREMIUM_USERNAME: {
-          premium = true;
-          break;
-        }
-        case UNKNOWN: {
-          unknown = true;
-          break;
-        }
-        case RATE_LIMIT: {
-          wasRateLimited = true;
-          break;
-        }
-        default:
-        case ERROR: {
-          wasError = true;
-          break;
-        }
+  public boolean isPremium(String nickname) {
+    for (String string : Settings.IMP.OFFLINE.EXCEPTION_NAME) {
+      if (nickname.equalsIgnoreCase(string)) {
+        return true;
       }
     }
 
-    if (unknown) {
-      if (uuid != null && this.isPremiumUuid(uuid)) {
-        CachedPremiumUser premiumUser = this.setPremium(lowercaseNickname, true);
-        premiumUser.setForcePremium(true);
-        return premiumUser.isPremium();
-      }
-
-      if (Settings.IMP.MAIN.ONLINE_MODE_NEED_AUTH) {
+    for (String offlineNamePrefix : Settings.IMP.OFFLINE.OFFLINE_NAME_PREFIX) {
+      if(nickname.toLowerCase().startsWith(offlineNamePrefix.toLowerCase())) {
         return false;
       }
     }
 
-    if (wasRateLimited && unknown || wasRateLimited && wasError) {
-      return Settings.IMP.MAIN.ON_RATE_LIMIT_PREMIUM;
-    }
-
-    if (wasError && unknown || !premium) {
-      return Settings.IMP.MAIN.ON_SERVER_ERROR_PREMIUM;
-    }
-
-    return this.setPremium(lowercaseNickname, true).isPremium();
-  }
-
-  public boolean isPremium(String nickname) {
-    if (Settings.IMP.MAIN.FORCE_OFFLINE_MODE) {
-      return false;
-    } else {
-      if (Settings.IMP.MAIN.CHECK_PREMIUM_PRIORITY_INTERNAL) {
-        return checkIsPremiumAndCache(nickname, this::isPremiumInternal, this::isPremiumExternal);
-      } else {
-        return checkIsPremiumAndCache(nickname, this::isPremiumExternal, this::isPremiumInternal);
-      }
-    }
+    return true;
   }
 
   public CachedPremiumUser getPremiumCache(String nickname) {

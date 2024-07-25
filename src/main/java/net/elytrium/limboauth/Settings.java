@@ -21,6 +21,7 @@ import java.nio.charset.StandardCharsets;
 import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
 import java.security.SecureRandom;
+import java.util.Collections;
 import java.util.List;
 import java.util.Random;
 import java.util.concurrent.ThreadLocalRandom;
@@ -57,6 +58,18 @@ public class Settings extends YamlConfig {
   public String PREFIX = "LimboAuth &6>>&f";
 
   @Create
+  public OFFLINE OFFLINE;
+
+  @Comment("在这里设置哪些ID必须使用离线登录, 否则就正版登录")
+  public static class OFFLINE {
+    @Comment("如果自己的名字的前缀是下面配置的, 就一定开启离线登录")
+    public List<String> OFFLINE_NAME_PREFIX = Collections.singletonList("OF_");
+
+    @Comment("例外的ID, 某些名字符合 OFFLINE_NAME_PREFIX 但是不想让这些名字离线登录可以写进去")
+    public List<String> EXCEPTION_NAME = Collections.singletonList("OF_MY_IS_PREILUM");
+  }
+
+  @Create
   public MAIN MAIN;
 
   @Comment("Don't use \\n, use {NL} for new line, and {PRFX} for prefix.")
@@ -74,48 +87,16 @@ public class Settings extends YamlConfig {
     public int MAX_PASSWORD_LENGTH = 71;
     public boolean CHECK_PASSWORD_STRENGTH = true;
     public String UNSAFE_PASSWORDS_FILE = "unsafe_passwords.txt";
-    @Comment({
-        "Players with premium nicknames should register/auth if this option is enabled",
-        "Players with premium nicknames must login with a premium Minecraft account if this option is disabled",
-    })
-    public boolean ONLINE_MODE_NEED_AUTH = true;
-    @Comment({
-        "WARNING: This is semi-experimental feature.",
-        "Disable to allow offline-mode players using online-mode usernames",
-        "If you disable it, be sure that online-mode players still can be offline-mode as there",
-        "are no proper way to see if the player is joining via online-mode enabled client."
-    })
-    public boolean ONLINE_MODE_NEED_AUTH_STRICT = true;
     @Comment("Needs floodgate plugin if disabled.")
     public boolean FLOODGATE_NEED_AUTH = true;
-    @Comment("TOTALLY disables hybrid auth feature")
-    public boolean FORCE_OFFLINE_MODE = false;
-    @Comment("Forces all players to get offline uuid")
-    public boolean FORCE_OFFLINE_UUID = false;
-    @Comment("If enabled, the plugin will firstly check whether the player is premium through the local database, and secondly through Mojang API.")
-    public boolean CHECK_PREMIUM_PRIORITY_INTERNAL = true;
     @Comment("Delay in milliseconds before sending auth-confirming titles and messages to the player. (login-premium-title, login-floodgate, etc.)")
     public int PREMIUM_AND_FLOODGATE_MESSAGES_DELAY = 1250;
-    @Comment({
-        "Forcibly set player's UUID to the value from the database",
-        "If the player had the cracked account, and switched to the premium account, the cracked UUID will be used."
-    })
-    public boolean SAVE_UUID = true;
-    @Comment({
-        "Saves in the database the accounts of premium users whose login is via online-mode-need-auth: false",
-        "Can be disabled to reduce the size of stored data in the database"
-    })
-    public boolean SAVE_PREMIUM_ACCOUNTS = true;
     public boolean ENABLE_TOTP = true;
     public boolean TOTP_NEED_PASSWORD = true;
     public boolean REGISTER_NEED_REPEAT_PASSWORD = true;
     public boolean CHANGE_PASSWORD_NEED_OLD_PASSWORD = true;
     @Comment("Used in unregister and premium commands.")
     public String CONFIRM_KEYWORD = "confirm";
-    @Comment("This prefix will be added to offline mode players nickname")
-    public String OFFLINE_MODE_PREFIX = "";
-    @Comment("This prefix will be added to online mode players nickname")
-    public String ONLINE_MODE_PREFIX = "";
     @Comment({
         "If you want to migrate your database from another plugin, which is not using BCrypt.",
         "You can set an old hash algorithm to migrate from.",
@@ -180,54 +161,6 @@ public class Settings extends YamlConfig {
 
     @Comment("Available: ADVENTURE, CREATIVE, SURVIVAL, SPECTATOR")
     public GameMode GAME_MODE = GameMode.ADVENTURE;
-
-    @Comment({
-        "Custom isPremium URL",
-        "You can use Mojang one's API (set by default)",
-        "Or CloudFlare one's: https://api.ashcon.app/mojang/v2/user/%s",
-        "Or use this code to make your own API: https://blog.cloudflare.com/minecraft-api-with-workers-coffeescript/",
-        "Or implement your own API, it should just respond with HTTP code 200 (see parameters below) only if the player is premium"
-    })
-    public String ISPREMIUM_AUTH_URL = "https://api.mojang.com/users/profiles/minecraft/%s";
-
-    @Comment({
-        "Status codes (see the comment above)",
-        "Responses with unlisted status codes will be identified as responses with a server error",
-        "Set 200 if you use using Mojang or CloudFlare API"
-    })
-    public List<Integer> STATUS_CODE_USER_EXISTS = List.of(200);
-    @Comment("Set 204 and 404 if you use Mojang API, 404 if you use CloudFlare API")
-    public List<Integer> STATUS_CODE_USER_NOT_EXISTS = List.of(204, 404);
-    @Comment("Set 429 if you use Mojang or CloudFlare API")
-    public List<Integer> STATUS_CODE_RATE_LIMIT = List.of(429);
-
-    @Comment({
-        "Sample Mojang API exists response: {\"name\":\"hevav\",\"id\":\"9c7024b2a48746b3b3934f397ae5d70f\"}",
-        "Sample CloudFlare API exists response: {\"uuid\":\"9c7024b2a48746b3b3934f397ae5d70f\",\"username\":\"hevav\", ...}",
-        "",
-        "Sample Mojang API not exists response (sometimes can be empty): {\"path\":\"/users/profiles/minecraft/someletters1234566\",\"errorMessage\":\"Couldn't find any profile with that name\"}",
-        "Sample CloudFlare API not exists response: {\"code\":404,\"error\":\"Not Found\",\"reason\":\"No user with the name 'someletters123456' was found\"}",
-        "",
-        "Responses with an invalid scheme will be identified as responses with a server error",
-        "Set this parameter to [], to disable JSON scheme validation"
-    })
-    public List<String> USER_EXISTS_JSON_VALIDATOR_FIELDS = List.of("name", "id");
-    public String JSON_UUID_FIELD = "id";
-    public List<String> USER_NOT_EXISTS_JSON_VALIDATOR_FIELDS = List.of();
-
-    @Comment({
-        "If Mojang rate-limits your server, we cannot determine if the player is premium or not",
-        "This option allows you to choose whether every player will be defined as premium or as cracked while Mojang is rate-limiting the server",
-        "True - as premium; False - as cracked"
-    })
-    public boolean ON_RATE_LIMIT_PREMIUM = true;
-
-    @Comment({
-        "If Mojang API is down, we cannot determine if the player is premium or not",
-        "This option allows you to choose whether every player will be defined as premium or as cracked while Mojang API is unavailable",
-        "True - as premium; False - as cracked"
-    })
-    public boolean ON_SERVER_ERROR_PREMIUM = true;
 
     public List<String> REGISTER_COMMAND = List.of("/r", "/reg", "/register");
     public List<String> LOGIN_COMMAND = List.of("/l", "/log", "/login");

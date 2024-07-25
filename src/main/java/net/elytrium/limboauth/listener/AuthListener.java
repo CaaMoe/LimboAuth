@@ -73,27 +73,6 @@ public class AuthListener {
     if (!event.getResult().isForceOfflineMode()) {
       if (this.plugin.isPremium(username)) {
         event.setResult(PreLoginEvent.PreLoginComponentResult.forceOnlineMode());
-
-        try {
-          if (!Settings.IMP.MAIN.ONLINE_MODE_NEED_AUTH_STRICT) {
-            CachedPremiumUser premiumUser = this.plugin.getPremiumCache(username);
-            MinecraftConnection connection = this.getConnection(event.getConnection());
-            if (!connection.isClosed() && premiumUser != null && !premiumUser.isForcePremium()
-                && this.plugin.isPremiumInternal(username.toLowerCase(Locale.ROOT)).getState() == PremiumState.UNKNOWN) {
-              this.plugin.getPendingLogins().add(username);
-
-              // As Velocity doesnt have any events for our usecase, just inject into netty
-              connection.getChannel().closeFuture().addListener(future -> {
-                // Player has failed premium verfication client-side, mark as offline-mode
-                if (this.plugin.getPendingLogins().remove(username)) {
-                  this.plugin.setPremium(username.toLowerCase(Locale.ROOT), false);
-                }
-              });
-            }
-          }
-        } catch (Throwable throwable) {
-          throw new IllegalStateException("failed to track authentication process", throwable);
-        }
       } else {
         event.setResult(PreLoginEvent.PreLoginComponentResult.forceOfflineMode());
       }
@@ -174,30 +153,7 @@ public class AuthListener {
 
   @Subscribe(order = PostOrder.FIRST)
   public void onGameProfileRequest(GameProfileRequestEvent event) {
-    if (Settings.IMP.MAIN.SAVE_UUID && (this.floodgateApi == null || !this.floodgateApi.isFloodgatePlayer(event.getOriginalProfile().getId()))) {
-      RegisteredPlayer registeredPlayer = AuthSessionHandler.fetchInfo(this.playerDao, event.getOriginalProfile().getId());
-
-      if (registeredPlayer != null && !registeredPlayer.getUuid().isEmpty()) {
-        event.setGameProfile(event.getOriginalProfile().withId(UUID.fromString(registeredPlayer.getUuid())));
-        return;
-      }
-      registeredPlayer = AuthSessionHandler.fetchInfo(this.playerDao, event.getUsername());
-
-      if (registeredPlayer != null) {
-        String currentUuid = registeredPlayer.getUuid();
-
-        if (currentUuid.isEmpty()) {
-          try {
-            registeredPlayer.setUuid(event.getGameProfile().getId().toString());
-            this.playerDao.update(registeredPlayer);
-          } catch (SQLException e) {
-            throw new SQLRuntimeException(e);
-          }
-        } else {
-          event.setGameProfile(event.getOriginalProfile().withId(UUID.fromString(currentUuid)));
-        }
-      }
-    } else if (event.isOnlineMode()) {
+    if (event.isOnlineMode()) {
       try {
         UpdateBuilder<RegisteredPlayer, String> updateBuilder = this.playerDao.updateBuilder();
         updateBuilder.where().eq(RegisteredPlayer.LOWERCASE_NICKNAME_FIELD, event.getUsername().toLowerCase(Locale.ROOT));
@@ -206,18 +162,6 @@ public class AuthListener {
       } catch (SQLException e) {
         throw new SQLRuntimeException(e);
       }
-    }
-
-    if (Settings.IMP.MAIN.FORCE_OFFLINE_UUID) {
-      event.setGameProfile(event.getOriginalProfile().withId(UuidUtils.generateOfflinePlayerUuid(event.getUsername())));
-    }
-
-    if (!event.isOnlineMode() && !Settings.IMP.MAIN.OFFLINE_MODE_PREFIX.isEmpty()) {
-      event.setGameProfile(event.getOriginalProfile().withName(Settings.IMP.MAIN.OFFLINE_MODE_PREFIX + event.getUsername()));
-    }
-
-    if (event.isOnlineMode() && !Settings.IMP.MAIN.ONLINE_MODE_PREFIX.isEmpty()) {
-      event.setGameProfile(event.getOriginalProfile().withName(Settings.IMP.MAIN.ONLINE_MODE_PREFIX + event.getUsername()));
     }
   }
 
