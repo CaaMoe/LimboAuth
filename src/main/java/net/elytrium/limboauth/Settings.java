@@ -66,7 +66,7 @@ public class Settings extends YamlConfig {
     public List<String> OFFLINE_NAME_PREFIX = Collections.singletonList("OF_");
 
     @Comment("例外的ID, 某些名字符合 OFFLINE_NAME_PREFIX 但是不想让这些名字离线登录可以写进去")
-    public List<String> EXCEPTION_NAME = Collections.singletonList("OF_MY_IS_PREILUM");
+    public List<String> EXCEPTION_NAME = Collections.singletonList("OF_MY_IS_PREMIUM");
   }
 
   @Create
